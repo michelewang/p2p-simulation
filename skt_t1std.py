@@ -13,7 +13,7 @@ from messages import Upload, Request
 from util import even_split
 from peer import Peer
 
-class Dummy(Peer):
+class SKT_T1Std(Peer):
     def post_init(self):
         print "post_init(): %s here!" % self.id
         self.dummy_state = dict()
@@ -24,7 +24,7 @@ class Dummy(Peer):
         peers: available info about the peers (who has what pieces)
         history: what's happened so far as far as this peer can see
 
-        returns: a list of Request() objects
+        returns: a list of Request() objects 
 
         This will be called after update_pieces() with the most recent state.
         """
@@ -50,7 +50,17 @@ class Dummy(Peer):
         
         # Sort peers by id.  This is probably not a useful sort, but other 
         # sorts might be useful
-        peers.sort(key=lambda p: p.id)
+    
+        # ACTUALLY: sort peers by people who have given you the highest upload bandwidth in the past period
+        print "*************"
+        print history.uploads
+        last_round_uploads = [v[:-1] for v in history.uploads] # this is a list of uploads
+        last_round_uploads_flattened = [upload for sublist in last_round_uploads for upload in sublist] # just user uploads
+
+        my_uploaders = filter(lambda upload: upload.to_id == self.id, last_round_uploads_flattened)
+        # find the top 3 peers who gave us the most download bandwidth (i.e. blocks)
+        top_peer_uploads = sorted(my_uploaders, key=lambda upload: upload.bw)[-3:]
+
         # request all available pieces from all peers!
         # (up to self.max_requests from each)
         for peer in peers:
@@ -58,6 +68,10 @@ class Dummy(Peer):
             isect = av_set.intersection(np_set)
             n = min(self.max_requests, len(isect))
             # More symmetry breaking -- ask for random pieces.
+
+
+            # request pieces by rarest-first, globally rarest
+            
             # This would be the place to try fancier piece-requesting strategies
             # to avoid getting the same thing from multiple peers at a time.
             for piece_id in random.sample(isect, n):
@@ -76,9 +90,10 @@ class Dummy(Peer):
         peers -- available info about all the peers
         history -- history for all previous rounds
 
-        returns: list of Upload objects.
-
+        returns: list of Upload objects which specify how much of its upload bandwidth to allocate
+to any given peer. 
         In each round, this will be called after requests().
+        
         """
 
         round = history.current_round()
@@ -89,6 +104,8 @@ class Dummy(Peer):
         # has a list of Download objects for each Download to this peer in
         # the previous round.
 
+
+        # unchoke 
         if len(requests) == 0:
             logging.debug("No one wants my pieces!")
             chosen = []
