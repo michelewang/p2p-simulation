@@ -12,11 +12,14 @@ import logging
 from messages import Upload, Request
 from util import even_split
 from peer import Peer
+from random import sample 
+
 
 class SKT_T1Std(Peer):
     def post_init(self):
         print "post_init(): %s here!" % self.id
         self.dummy_state = dict()
+        self.piece_availabilities = dict()
         self.dummy_state["cake"] = "lie"
     
     def requests(self, peers, history):
@@ -50,31 +53,27 @@ class SKT_T1Std(Peer):
         
         # Sort peers by id.  This is probably not a useful sort, but other 
         # sorts might be useful
-    
-        # ACTUALLY: sort peers by people who have given you the highest upload bandwidth in the past period
-        print "*************"
-        print history.uploads
-        last_round_uploads = [v[:-1] for v in history.uploads] # this is a list of uploads
-        last_round_uploads_flattened = [upload for sublist in last_round_uploads for upload in sublist] # just user uploads
 
-        my_uploaders = filter(lambda upload: upload.to_id == self.id, last_round_uploads_flattened)
-        # find the top 3 peers who gave us the most download bandwidth (i.e. blocks)
-        top_peer_uploads = sorted(my_uploaders, key=lambda upload: upload.bw)[-3:]
+        # loop through every piece you need
+        for needed in needed_pieces:
+            # find out which peers have each piece by looping through the piece availabilities of peers
+            peers_with_piece = filter(lambda peer: needed in peer.available_pieces, peers)
+            # store number of peers with piece in dictionary
+            self.piece_availabilities[needed] = len(peers_with_piece)
 
-        # request all available pieces from all peers!
-        # (up to self.max_requests from each)
+        # request pieces from all peers, up to self.max_requests from each
         for peer in peers:
             av_set = set(peer.available_pieces)
             isect = av_set.intersection(np_set)
             n = min(self.max_requests, len(isect))
-            # More symmetry breaking -- ask for random pieces.
+            # sort this based on the pieces in your piece availability dictionary
+            sorted_by_rarest = sorted(isect, key=lambda piece: self.piece_availabilities[piece])
 
-
-            # request pieces by rarest-first, globally rarest
-            
             # This would be the place to try fancier piece-requesting strategies
             # to avoid getting the same thing from multiple peers at a time.
-            for piece_id in random.sample(isect, n):
+
+            # take the top n pieces from your dictionary
+            for piece_id in sorted_by_rarest[:n]:
                 # aha! The peer has this piece! Request it.
                 # which part of the piece do we need next?
                 # (must get the next-needed blocks in order)
@@ -100,9 +99,38 @@ to any given peer.
         logging.debug("%s again.  It's round %d." % (
             self.id, round))
         # One could look at other stuff in the history too here.
-        # For example, history.downloads[round-1] (if round != 0, of course)
-        # has a list of Download objects for each Download to this peer in
-        # the previous round.
+        # For example, history.downloads[round-1] (if round != 0, of course) has a list of Download objects for each Download to this peer in the previous round.
+
+        if round == 1:
+            # randomly pick 4 users requesting pieces from us, and give each of them equal bandwidth
+            requesters_ids = map(lambda request: request.requester_id, requests)
+            chosen_peer_ids = random.sample(requesters_ids, 4)
+            bws = even_split(self.up_bw, len(chosen_peer_ids))
+        else:
+            # pick the top 3 people who gave us the highest upload bandwidth in the past period
+            # prev_upload = history.downloads[:-1]
+            # BEN
+            # last_round_uploads = [v[:-1] for v in history.uploads] # this is a list of uploads
+            # last_round_uploads_flattened = [upload for sublist in last_round_uploads for upload in sublist] # just user uploads
+            # my_uploaders = filter(lambda upload: upload.to_id == self.id, last_round_uploads_flattened)
+            # find the top 3 peers who gave us the most download bandwidth (i.e. blocks)
+            # top_peer_uploads = sorted(my_uploaders, key=lambda upload: upload.bw)[-3:]
+
+            #MICHELE
+            prev_uploads = history.uploads[-1]
+            my_uploaders = filter(lambda upload: upload.to_id == self.id, prev_uploads)
+            top_peer_uploads = sorted(my_uploaders, key=lambda upload:upload.bw)[-3:]
+            top_peer_ids = map(lambda uploader: uploader.from_id, top_peer_uploads)
+            bws = even_split(self.up_bw*(3/4), len(top_peer_ids))
+
+            #optimistic unchoking
+
+
+
+
+        # ACTUALLY: sort peers by people who have given you the highest upload bandwidth in the past period
+        print "*************"
+        print history.uploads
 
 
         # unchoke 
