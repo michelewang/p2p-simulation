@@ -12,15 +12,13 @@ import logging
 from messages import Upload, Request
 from util import even_split
 from peer import Peer
+from collections import defaultdict
 from random import sample 
-
 
 class SKT_T1Std(Peer):
     def post_init(self):
         print "post_init(): %s here!" % self.id
-        self.dummy_state = dict()
         self.piece_availabilities = dict()
-        self.dummy_state["cake"] = "lie"
         self.optimistic_unchoked_peer = None
     
     def requests(self, peers, history):
@@ -71,7 +69,7 @@ class SKT_T1Std(Peer):
             # sort this based on the pieces in your piece availability dictionary
             sorted_by_rarest = sorted(isect, key=lambda piece: self.piece_availabilities[piece])
 
-            if sorted_by_rarest == None:
+            if sorted_by_rarest is None:
                 print "No request; no peers have our needed pieces"
                 return []
 
@@ -106,7 +104,7 @@ to any given peer.
             self.id, round))
 
         # don't upload if you don't receive requests
-        if requests == []:
+        if not requests:
             return []
 
         # One could look at other stuff in the history too here.
@@ -119,7 +117,6 @@ to any given peer.
         if round == 0:
             # randomly pick 4 users requesting pieces from us, and give each of them equal bandwidth
             chosen_peer_ids = random.sample(requesters_ids, 4)
-            print("people to unchoke: ", chosen_peer_ids)
             peers_to_unchoke = chosen_peer_ids
         else:
             # pick the top 3 people who gave us the highest upload bandwidth in the past period
@@ -132,30 +129,44 @@ to any given peer.
             # top_peer_uploads = sorted(my_uploaders, key=lambda upload: upload.bw)[-3:]
 
             #MICHELE
-            print("history", history.downloads)
-            print("history", history.uploads)
-            prev_uploads = history.uploads[-1]
-            print("previous uploads", prev_uploads)
-            my_uploaders = filter(lambda upload: upload.to_id == self.id, prev_uploads)
-            print("my uploaders", my_uploaders)
-            top_peer_uploads = sorted(my_uploaders, key=lambda upload:upload.bw)[-3:]
-            top_peer_ids = map(lambda uploader: uploader.from_id, top_peer_uploads)
-            peers_to_unchoke = top_peer_ids
-            print("hi", peers_to_unchoke)
+            # print(history)
+            # print("history", history.downloads)
+            # print("history", history.uploads)
+            # prev_uploads = history.uploads[-1]
+            # print("previous uploads", prev_uploads)
+            # my_uploaders = filter(lambda upload: upload.to_id == self.id, prev_uploads)
+            # print("my uploaders", my_uploaders)
+            # top_peer_uploads = sorted(my_uploaders, key=lambda upload:upload.bw)[-3:]
+            # top_peer_ids = map(lambda uploader: uploader.from_id, top_peer_uploads)
+            # peers_to_unchoke = top_peer_ids
+            # print("hi", peers_to_unchoke)
             # peers array with 3 regular peers and save one for optimistic guy
 
-        #optimistic unchoking every 3 rounds
-        if (round % 3 == 0 and len(requesters_ids) > len(peers_to_unchoke)):
+            # print("Downloads", history.downloads)
+            # print("Uploads", history.uploads)
+            downloads = history.downloads[-1]
+            down_bw = defaultdict(int)
+            down_set = set()
+            for download in downloads:
+                down_bw[download.from_id] += download.blocks
+                down_set.add(download.from_id)
+            top_downloads = list(down_set)
+            top_downloads.sort(key=lambda x: down_bw[x], reverse=True)
+            peers_to_unchoke = top_downloads
+
+        # Optimistic unchoking every 3 rounds
+        if round % 3 == 0 and len(requesters_ids) > len(peers_to_unchoke):
             # randomly choose a person from requesters_ids
             # make sure that person is not someone you're already unchoking
             self.optimistic_unchoked_peer = random.sample(requesters_ids, 1)
-            print(len(peers_to_unchoke))
-            while(self.optimistic_unchoked_peer not in peers_to_unchoke):
+            while self.optimistic_unchoked_peer in peers_to_unchoke:
                 self.optimistic_unchoked_peer = random.sample(requesters_ids, 1)
 
         # if we have spots left
-        if(len(peers_to_unchoke) < 4):
+        if len(peers_to_unchoke) < 4:
             peers_to_unchoke.append(self.optimistic_unchoked_peer)
+
+        # print("Unchoke: ", peers_to_unchoke)
         bws = even_split(self.up_bw, len(peers_to_unchoke))
         # create actual uploads out of the list of peer ids and bandwidths
         uploads = [Upload(self.id, peer_id, bw)
