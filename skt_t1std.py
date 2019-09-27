@@ -45,8 +45,6 @@ class SKT_T1Std(Peer):
         logging.debug(str(history))
 
         requests = []
-        # Symmetry breaking is good...
-        random.shuffle(need_list)
 
         # Store number of peers with our needed pieces in dictionary
         for needed in need_list:
@@ -100,7 +98,7 @@ to any given peer.
         # One could look at other stuff in the history too here.
         # For example, history.downloads[round-1] (if round != 0, of course) has a list of Download objects for each Download to this peer in the previous round.
 
-        requesters_ids = map(lambda request: request.requester_id, requests)
+        requesters_ids = set(map(lambda request: request.requester_id, requests))
 
         # If first round, give unchoke spot to random agent. If later round, give to agent who gave us highest bandwidth
         if round == 0:
@@ -108,15 +106,13 @@ to any given peer.
             chosen_peer_ids = random.sample(requesters_ids, 4)
             peers_to_unchoke = chosen_peer_ids
         else:
-            # Pick the top 3 people who gave us the highest upload bandwidth in the past period
+            # Pick the top 3 requesters who gave us the highest upload bandwidth in the past period
             downloads = history.downloads[-1]
             down_bw = defaultdict(int)
-            down_set = set()
             for download in downloads:
-                down_bw[download.from_id] += download.blocks
-                down_set.add(download.from_id)
-            top_downloads = list(down_set)
-            top_downloads.sort(key=lambda x: down_bw[x], reverse=True)
+                if download.from_id in requesters_ids:
+                    down_bw[download.from_id] += download.blocks
+            top_downloads = sorted(requesters_ids, key=lambda x: down_bw[x], reverse=True)
             peers_to_unchoke = top_downloads[-3:]
 
         # Optimistic unchoking every 3 rounds: randomly choose an agent who isn't already in peers_to_unchoke
