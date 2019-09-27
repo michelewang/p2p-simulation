@@ -103,8 +103,10 @@ to any given peer.
         # If first round, give unchoke spot to random agent. If later round, give to agent who gave us highest bandwidth
         if round == 0:
             # Randomly pick 4 users requesting pieces from us, and give each of them equal bandwidth
-            chosen_peer_ids = random.sample(requesters_ids, 4)
-            peers_to_unchoke = chosen_peer_ids
+            if len(requesters_ids) < 4:
+                peers_to_unchoke = list(requesters_ids)
+            else:
+                peers_to_unchoke = random.sample(requesters_ids, 4)
         else:
             # Pick the top 3 requesters who gave us the highest upload bandwidth in the past period
             downloads = history.downloads[-1]

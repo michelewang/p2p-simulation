@@ -21,6 +21,7 @@ class SKT_T1PropShare(Peer):
         print "post_init(): %s here!" % self.id
         self.piece_availabilities = dict()
         self.optimistic_unchoked_peer = None
+        self.optimistic_proportion = 0.1
 
     def requests(self, peers, history):
         """
@@ -106,6 +107,7 @@ to any given peer.
             # Randomly pick 4 users requesting pieces from us, and give each of them equal bandwidth
             chosen_peer_ids = random.sample(requesters_ids, 4)
             peers_to_unchoke = chosen_peer_ids
+            bws = even_split(self.up_bw, len(peers_to_unchoke))
         else:
             # Pick the top 3 requesters who gave us the highest upload bandwidth in the past period
             downloads = history.downloads[-1]
@@ -113,21 +115,29 @@ to any given peer.
             for download in downloads:
                 if download.from_id in requesters_ids:
                     down_bw[download.from_id] += download.blocks
-            top_downloads = sorted(requesters_ids, key=lambda x: down_bw[x], reverse=True)
+            top_downloads = sorted(requesters_ids, key=lambda x: down_bw[x])
             peers_to_unchoke = top_downloads[-3:]
+            bw_sum_unchoke = sum([down_bw[peer] for peer in peers_to_unchoke])
+            if bw_sum_unchoke == 0:
+                if len(requesters_ids) < 3:
+                    peers_to_unchoke = list(requesters_ids)
+                else:
+                    peers_to_unchoke = random.sample(requesters_ids, 3)
+                bws = even_split(int(self.up_bw * (1 - self.optimistic_proportion)), 3)
+            else:
+                bws = [int(down_bw[peer] / bw_sum_unchoke * (1 - self.optimistic_proportion)) for peer in peers_to_unchoke]
 
         # Optimistic unchoking every 3 rounds: randomly choose an agent who isn't already in peers_to_unchoke
         if round % 3 == 0 and len(requesters_ids) > len(peers_to_unchoke):
-            self.optimistic_unchoked_peer = random.choice(requesters_ids)
+            self.optimistic_unchoked_peer = random.choice(list(requesters_ids))
             while self.optimistic_unchoked_peer in peers_to_unchoke:
-                self.optimistic_unchoked_peer = random.choice(requesters_ids)
+                self.optimistic_unchoked_peer = random.choice(list(requesters_ids))
 
         # If we have spots left, add the peer from optimistic unchoking
         if len(peers_to_unchoke) < 4:
             peers_to_unchoke.append(self.optimistic_unchoked_peer)
+            bws.append(self.optimistic_proportion)
 
-        bws = even_split(self.up_bw, len(peers_to_unchoke))
-        uploads = [Upload(self.id, peer_id, bw)
-                   for (peer_id, bw) in zip(peers_to_unchoke, bws)]
+        uploads = [Upload(self.id, peer_id, bw) for (peer_id, bw) in zip(peers_to_unchoke, bws)]
 
         return uploads
