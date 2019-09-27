@@ -112,21 +112,20 @@ to any given peer.
             for download in downloads:
                 if download.from_id in requesters_ids:
                     down_bw[download.from_id] += download.blocks
-            top_downloads = sorted(requesters_ids, key=lambda x: down_bw[x], reverse=True)
+            top_downloads = sorted(requesters_ids, key=lambda x: down_bw[x])
             peers_to_unchoke = top_downloads[-3:]
 
         # Optimistic unchoking every 3 rounds: randomly choose an agent who isn't already in peers_to_unchoke
         if round % 3 == 0 and len(requesters_ids) > len(peers_to_unchoke):
-            self.optimistic_unchoked_peer = random.choice(requesters_ids)
+            self.optimistic_unchoked_peer = random.choice(list(requesters_ids))
             while self.optimistic_unchoked_peer in peers_to_unchoke:
-                self.optimistic_unchoked_peer = random.choice(requesters_ids)
+                self.optimistic_unchoked_peer = random.choice(list(requesters_ids))
 
         # If we have spots left, add the peer from optimistic unchoking
         if len(peers_to_unchoke) < 4:
             peers_to_unchoke.append(self.optimistic_unchoked_peer)
 
         bws = even_split(self.up_bw, len(peers_to_unchoke))
-        uploads = [Upload(self.id, peer_id, bw)
-                   for (peer_id, bw) in zip(peers_to_unchoke, bws)]
+        uploads = [Upload(self.id, peer_id, bw) for (peer_id, bw) in zip(peers_to_unchoke, bws)]
             
         return uploads
