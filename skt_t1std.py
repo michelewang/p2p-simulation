@@ -21,6 +21,7 @@ class SKT_T1Std(Peer):
         self.dummy_state = dict()
         self.piece_availabilities = dict()
         self.dummy_state["cake"] = "lie"
+        self.optimistic_unchoked_peer = None
     
     def requests(self, peers, history):
         """
@@ -62,12 +63,17 @@ class SKT_T1Std(Peer):
             self.piece_availabilities[needed] = len(peers_with_piece)
 
         # request pieces from all peers, up to self.max_requests from each
+        # use rarest-first strategy for requesting pieces from peers
         for peer in peers:
             av_set = set(peer.available_pieces)
             isect = av_set.intersection(np_set)
             n = min(self.max_requests, len(isect))
             # sort this based on the pieces in your piece availability dictionary
             sorted_by_rarest = sorted(isect, key=lambda piece: self.piece_availabilities[piece])
+
+            if sorted_by_rarest == None:
+                print "No request; no peers have our needed pieces"
+                return []
 
             # This would be the place to try fancier piece-requesting strategies
             # to avoid getting the same thing from multiple peers at a time.
@@ -98,14 +104,23 @@ to any given peer.
         round = history.current_round()
         logging.debug("%s again.  It's round %d." % (
             self.id, round))
+
+        # don't upload if you don't receive requests
+        if requests == []:
+            return []
+
         # One could look at other stuff in the history too here.
         # For example, history.downloads[round-1] (if round != 0, of course) has a list of Download objects for each Download to this peer in the previous round.
 
-        if round == 1:
+        requesters_ids = map(lambda request: request.requester_id, requests)
+        peers_to_unchoke = set()
+
+        # if first round, give unchoke spot to random agent. if later round, give to highest upload bandwith to us
+        if round == 0:
             # randomly pick 4 users requesting pieces from us, and give each of them equal bandwidth
-            requesters_ids = map(lambda request: request.requester_id, requests)
             chosen_peer_ids = random.sample(requesters_ids, 4)
-            bws = even_split(self.up_bw, len(chosen_peer_ids))
+            print("people to unchoke: ", chosen_peer_ids)
+            peers_to_unchoke = chosen_peer_ids
         else:
             # pick the top 3 people who gave us the highest upload bandwidth in the past period
             # prev_upload = history.downloads[:-1]
@@ -117,39 +132,33 @@ to any given peer.
             # top_peer_uploads = sorted(my_uploaders, key=lambda upload: upload.bw)[-3:]
 
             #MICHELE
+            print("history", history.downloads)
+            print("history", history.uploads)
             prev_uploads = history.uploads[-1]
+            print("previous uploads", prev_uploads)
             my_uploaders = filter(lambda upload: upload.to_id == self.id, prev_uploads)
+            print("my uploaders", my_uploaders)
             top_peer_uploads = sorted(my_uploaders, key=lambda upload:upload.bw)[-3:]
             top_peer_ids = map(lambda uploader: uploader.from_id, top_peer_uploads)
-            bws = even_split(self.up_bw*(3/4), len(top_peer_ids))
+            peers_to_unchoke = top_peer_ids
+            print("hi", peers_to_unchoke)
+            # peers array with 3 regular peers and save one for optimistic guy
 
-            #optimistic unchoking
+        #optimistic unchoking every 3 rounds
+        if (round % 3 == 0 and len(requesters_ids) > len(peers_to_unchoke)):
+            # randomly choose a person from requesters_ids
+            # make sure that person is not someone you're already unchoking
+            self.optimistic_unchoked_peer = random.sample(requesters_ids, 1)
+            print(len(peers_to_unchoke))
+            while(self.optimistic_unchoked_peer not in peers_to_unchoke):
+                self.optimistic_unchoked_peer = random.sample(requesters_ids, 1)
 
-
-
-
-        # ACTUALLY: sort peers by people who have given you the highest upload bandwidth in the past period
-        print "*************"
-        print history.uploads
-
-
-        # unchoke 
-        if len(requests) == 0:
-            logging.debug("No one wants my pieces!")
-            chosen = []
-            bws = []
-        else:
-            logging.debug("Still here: uploading to a random peer")
-            # change my internal state for no reason
-            self.dummy_state["cake"] = "pie"
-
-            request = random.choice(requests)
-            chosen = [request.requester_id]
-            # Evenly "split" my upload bandwidth among the one chosen requester
-            bws = even_split(self.up_bw, len(chosen))
-
+        # if we have spots left
+        if(len(peers_to_unchoke) < 4):
+            peers_to_unchoke.append(self.optimistic_unchoked_peer)
+        bws = even_split(self.up_bw, len(peers_to_unchoke))
         # create actual uploads out of the list of peer ids and bandwidths
         uploads = [Upload(self.id, peer_id, bw)
-                   for (peer_id, bw) in zip(chosen, bws)]
+                   for (peer_id, bw) in zip(peers_to_unchoke, bws)]
             
         return uploads
