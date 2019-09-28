@@ -106,13 +106,20 @@ to any given peer.
             else:
                 peers_to_unchoke = random.sample(requesters_ids, 4)
         else:
-            # Pick the top 3 requesters who gave us the highest upload bandwidth in the past period
+            # Pick the top 3 requesters who gave us the highest upload bandwidth in the past 2 periods
             downloads = history.downloads[-1]
             down_bw = defaultdict(int)
             for download in downloads:
                 if download.from_id in requesters_ids:
                     down_bw[download.from_id] += download.blocks
-            top_downloads = sorted(requesters_ids, key=lambda x: down_bw[x])
+            if round == 1:
+                top_downloads = sorted(requesters_ids, key=lambda x: down_bw[x])
+            else:
+                downloads2 = history.downloads[-2]
+                for download2 in downloads2:
+                    if download2.from_id in requesters_ids:
+                        down_bw[download2.from_id] += download2.blocks
+                top_downloads = sorted(requesters_ids, key=lambda x: down_bw[x])
             peers_to_unchoke = top_downloads[-3:]
 
         # Optimistic unchoking every 3 rounds: randomly choose an agent who isn't already in peers_to_unchoke
