@@ -34,7 +34,7 @@ class SKT_T1Tyrant(Peer):
         # Default value for d_ij (i's expected download rate if unchoked by j)
         self.default_possible_download_rates = self.up_bw / 4
 
-        # Dictionary where key = peer id, value = array where arr[0] = number of pieces peer has available at round 0
+        # Dictionary where key = peer id, value = array where arr[i] = number of pieces peer has available at round i
         self.peer_pieces_by_round = dict()
 
 
@@ -76,6 +76,7 @@ class SKT_T1Tyrant(Peer):
         # Request pieces from all peers, up to self.max_requests from each
         # Use rarest-first strategy for requesting pieces from peers
         for peer in peers:
+            self.peer_pieces_by_round[peer.id].append(len(peer.available_pieces))   # store for download estimation later
             av_set = set(peer.available_pieces)
             isect = av_set.intersection(need_set)
             n = min(self.max_requests, len(isect))
@@ -128,9 +129,6 @@ to any given peer.
                 peers_to_unchoke = list(requesters_ids)
             else:
                 peers_to_unchoke = random.sample(requesters_ids, 4)
-            for peer in peers:
-                # print("my available pieces", peer.available_pieces)
-                self.peer_pieces_by_round[peer.id].append(len(peer.available_pieces))
 
             bws = even_split(self.up_bw, len(peers_to_unchoke))
         else:
@@ -149,35 +147,20 @@ to any given peer.
             for peer in peers:
                 if peer.id not in unchoked_us_last_round:
                     self.rounds_unchoked_by[peer.id] = 0
-                # print("appending", len(peer.available_pieces))
-                self.peer_pieces_by_round[peer.id].append(len(peer.available_pieces))
-                # print('length of my array', len(self.peer_pieces_by_round[peer.id]))
 
             # Update parameters from the end of last round
             for peer in peers:
                 if peer.id not in unchoked_us_last_round:
                     self.min_upload_needed[peer.id] *= 1 + self.alpha
 
-                    # estimate download rate peer j would give us given they did not unchoke us last round
-                    # assume total rate of download that j provides to others = total rate of download in_j achieved by j = difference in j's pieces from last round to current round
-                    # downloads_to_peer_last = map(lambda downloads: downloads.to_id == peer.id, history.downloads[-1])
-                    # downloads_to_peer_last = filter(lambda download: download.to_id == peer.id, history.downloads[-1])
-                    # print(downloads_to_peer_last)
-                    print("by person",self.peer_pieces_by_round)
-                    print( "my pieces by round",self.peer_pieces_by_round[peer.id])
-                    # print("last round", history.last_round())
-                    # print("curr round", history.current_round())
-                    print(peer.available_pieces)
-                    peer_available_pieces_last_round = self.peer_pieces_by_round[peer.id][history.current_round()]
-                    if len(self.peer_pieces_by_round[peer.id]) == 1:
-                        diff_pieces = peer_available_pieces_last_round - 0
-                    else:
-                        peer_available_pieces_prev_round = self.peer_pieces_by_round[peer.id][history.current_round()-1]
-                        diff_pieces = peer_available_pieces_last_round - peer_available_pieces_prev_round
-                    self.possible_download_rates[peer.id] = (diff_pieces*self.conf.blocks_per_piece)/4
-                    # print(peer_last_available_pieces)
-
-                    
+                    # Estimate download rate peer j would give us given they did not unchoke us last round
+                    # Assume total rate of download that j provides to others = total rate of download achieved by j
+                    #   = difference in j's pieces from last round to current round
+                    peer_available_pieces_last_round = self.peer_pieces_by_round[peer.id][-1]
+                    peer_available_pieces_prev_round = 0 if len(self.peer_pieces_by_round[peer.id]) == 1 \
+                                                         else self.peer_pieces_by_round[peer.id][-2]
+                    diff_pieces = peer_available_pieces_last_round - peer_available_pieces_prev_round
+                    self.possible_download_rates[peer.id] = diff_pieces * self.conf.blocks_per_piece / 4
                 else:
                     self.possible_download_rates[peer.id] = downloaded_from_peer[peer.id]
                 if self.rounds_unchoked_by[peer.id] >= self.r:
