@@ -38,8 +38,7 @@ class SKT_T1PropShare(Peer):
                 need_list.append(i)
         need_set = set(need_list)
 
-        logging.debug("%s here: still need pieces %s" % (
-            self.id, need_list))
+        logging.debug("%s here: still need pieces %s" % (self.id, need_list))
         logging.debug("%s still here. Here are some peers:" % self.id)
         for p in peers:
             logging.debug("id: %s, available pieces: %s" % (p.id, p.available_pieces))
