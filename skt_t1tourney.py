@@ -67,9 +67,7 @@ class SKT_T1Tourney(Peer):
                 return []
             
             # rarity metric is how rare player's 2 rarest pieces are that we need. smaller is better
-            print(sorted_by_rarest)
             top_two_rarest = sum(sorted_by_rarest[:2])
-            print(top_two_rarest)
             peer_by_rarest_pieces_temp[peer.id] = top_two_rarest
 
             # This would be the place to try fancier piece-requesting strategies
@@ -108,7 +106,17 @@ to any given peer.
 
         requesters_ids = set(map(lambda request: request.requester_id, requests))
 
-        # find top two rarest pieces each player has
+        # break ties based on peer with the most number of pieces we need
+        needed_pieces_by_peer = dict()
+        for p in peers:
+            count_pieces = 0
+            if p.id in requesters_ids:
+                # count # of pieces they have
+                for needed_piece in self.need_set:
+                    if needed_piece in p.available_pieces:
+                        count_pieces += 1
+            needed_pieces_by_peer[p.id] = count_pieces
+        peers_with_most_needed_pieces = sorted(needed_pieces_by_peer.items(), reverse=True, key=lambda item: item[1])
         
         # If first round, give unchoke spot to random agent. If later round, give to agent who gave us highest bandwidth
         if round == 0:
@@ -124,27 +132,15 @@ to any given peer.
                 if download.from_id in requesters_ids:
                     down_bw[download.from_id] += download.blocks
             if round == 1:
-                top_downloads = sorted(requesters_ids, key=lambda x: down_bw[x])
+                top_downloads = sorted(requesters_ids, key=lambda x: (down_bw[x], needed_pieces_by_peer[x]))
             else:
                 downloads2 = history.downloads[-2]
                 for download2 in downloads2:
                     if download2.from_id in requesters_ids:
                         down_bw[download2.from_id] += download2.blocks
-                top_downloads = sorted(requesters_ids, key=lambda x: down_bw[x])
+                top_downloads = sorted(requesters_ids, key=lambda x: (down_bw[x], needed_pieces_by_peer[x]))
             peers_to_unchoke = top_downloads[-3:]
            
-        # optimistically unchoke the peer with the most number of pieces we need
-        needed_pieces_by_peer = dict()
-        for p in peers:
-            count_pieces = 0
-            if p.id in requesters_ids:
-                # count # of pieces they have
-                for needed_piece in self.need_set:
-                    if needed_piece in p.available_pieces:
-                        count_pieces += 1
-            needed_pieces_by_peer[p.id] = count_pieces
-        peers_with_most_needed_pieces = sorted(needed_pieces_by_peer.items(), reverse=True, key=lambda item: item[1])
-        
         # Optimistic unchoking every 3 rounds: choose an agent with most number of needed pieces who isn't already in peers_to_unchoke
         if round % 3 == 0 and len(requesters_ids) > len(peers_to_unchoke):
             peer_with_rarest = list(self.peer_by_rarest_pieces)[0]
