@@ -34,6 +34,9 @@ class SKT_T1Tyrant(Peer):
         # Default value for d_ij (i's expected download rate if unchoked by j)
         self.default_possible_download_rates = self.up_bw / 4
 
+        # Dictionary where key = peer id, value = array where arr[0] = number of pieces peer has available at round 0
+        self.peer_pieces_by_round = dict()
+
 
     def requests(self, peers, history):
         """
@@ -48,6 +51,7 @@ class SKT_T1Tyrant(Peer):
             for peer in peers:
                 self.min_upload_needed[peer.id] = self.default_min_upload_needed
                 self.possible_download_rates[peer.id] = self.default_possible_download_rates
+                self.peer_pieces_by_round[peer.id] = []
 
         need_list = []
         for i in range(len(self.pieces)):
@@ -124,6 +128,9 @@ to any given peer.
                 peers_to_unchoke = list(requesters_ids)
             else:
                 peers_to_unchoke = random.sample(requesters_ids, 4)
+            for peer in peers:
+                # print("my available pieces", peer.available_pieces)
+                self.peer_pieces_by_round[peer.id].append(len(peer.available_pieces))
 
             bws = even_split(self.up_bw, len(peers_to_unchoke))
         else:
@@ -131,21 +138,49 @@ to any given peer.
             unchoked_us_last_round = dict()
             downloaded_from_peer = defaultdict(int)
             for download in history.downloads[-1]:
+                # If agent who unchoked us in the last round is not in dict...
+                # Add them and increment the number of consecutive times they've unchoked us
                 if download.from_id not in unchoked_us_last_round:
                     self.rounds_unchoked_by[download.from_id] += 1
                     unchoked_us_last_round[download.from_id] = 1
+                # Store total amount we downloaded from each peer
                 downloaded_from_peer[download.from_id] += download.blocks
+
             for peer in peers:
                 if peer.id not in unchoked_us_last_round:
                     self.rounds_unchoked_by[peer.id] = 0
+                # print("appending", len(peer.available_pieces))
+                self.peer_pieces_by_round[peer.id].append(len(peer.available_pieces))
+                # print('length of my array', len(self.peer_pieces_by_round[peer.id]))
 
             # Update parameters from the end of last round
             for peer in peers:
                 if peer.id not in unchoked_us_last_round:
                     self.min_upload_needed[peer.id] *= 1 + self.alpha
+
+                    # estimate download rate peer j would give us given they did not unchoke us last round
+                    # assume total rate of download that j provides to others = total rate of download in_j achieved by j = difference in j's pieces from last round to current round
+                    # downloads_to_peer_last = map(lambda downloads: downloads.to_id == peer.id, history.downloads[-1])
+                    # downloads_to_peer_last = filter(lambda download: download.to_id == peer.id, history.downloads[-1])
+                    # print(downloads_to_peer_last)
+                    print("by person",self.peer_pieces_by_round)
+                    print( "my pieces by round",self.peer_pieces_by_round[peer.id])
+                    # print("last round", history.last_round())
+                    # print("curr round", history.current_round())
+                    print(peer.available_pieces)
+                    peer_available_pieces_last_round = self.peer_pieces_by_round[peer.id][history.current_round()]
+                    if len(self.peer_pieces_by_round[peer.id]) == 1:
+                        diff_pieces = peer_available_pieces_last_round - 0
+                    else:
+                        peer_available_pieces_prev_round = self.peer_pieces_by_round[peer.id][history.current_round()-1]
+                        diff_pieces = peer_available_pieces_last_round - peer_available_pieces_prev_round
+                    self.possible_download_rates[peer.id] = (diff_pieces*self.conf.blocks_per_piece)/4
+                    # print(peer_last_available_pieces)
+
+                    
                 else:
                     self.possible_download_rates[peer.id] = downloaded_from_peer[peer.id]
-                if self.rounds_unchoked_by[peer.id] >= 3:
+                if self.rounds_unchoked_by[peer.id] >= self.r:
                     self.min_upload_needed[peer.id] *= 1 - self.gamma
 
             # Determine who to unchoke by ordering by decreasing ratio d_ij/u_ij and choosing the k largest peers
