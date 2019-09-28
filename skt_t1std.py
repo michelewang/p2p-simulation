@@ -94,7 +94,6 @@ to any given peer.
         if not requests:
             return []
 
-        # One could look at other stuff in the history too here.
         # For example, history.downloads[round-1] (if round != 0, of course) has a list of Download objects for each Download to this peer in the previous round.
 
         requesters_ids = set(map(lambda request: request.requester_id, requests))
